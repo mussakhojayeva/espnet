@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 
-import sys, argparse, re, os, pdb
-from tqdm import tqdm
+import sys, argparse, re, os, pdb, random
+import pandas as pd
 from pathlib import Path
 import wave
 import contextlib
-
-seed=4
 
 def get_args():
     parser = argparse.ArgumentParser(description="", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -19,7 +17,7 @@ def get_args():
     return args
 
 
-def calc_duration(file_path):
+def get_duration(file_path):
     duration = None
     if os.path.exists(file_path) and Path(file_path).stat().st_size > 0:
         with contextlib.closing(wave.open(file_path,'r')) as f:
@@ -30,21 +28,14 @@ def calc_duration(file_path):
     return duration if duration else 0
             
 def read_meta(path):
-    with open(path, 'r') as f:
-        return f.read().splitlines()
-    
-def get_duration(dataset_dir, list_file):
-    total_duration = 0
-    err = 0
-    for instance in tqdm(list_file):
-        file_name = instance.strip()
-        file_path = os.path.join(dataset_dir, 'Audios', file_name) + '.wav'
-        dur = calc_duration(file_path)
-        if dur == 0: 
-            err+=1
-            print(instance)
-        total_duration += dur
-    return total_duration / 3600, err
+    meta = pd.read_csv(path, sep=" ") 
+    meta = meta.loc[:,'uttID':'deviceID']
+    files = []
+    for i, row in meta.iterrows():
+        utt, device = row
+        files.append(str(device) + '_' + utt)
+    files.sort()
+    return files
 
 def get_text(dataset_dir, file):
     txt_file = os.path.join(dataset_dir, 'Transcriptions', file) + '.txt'
@@ -52,19 +43,26 @@ def get_text(dataset_dir, file):
         return f.read().strip()
 
 def prepare_data(dataset_dir, path_root, files):
-    files.sort()
+    total_duration = 0
     wav_format = '-r 16000 -c 1 -b 16 -t wav - downsample |'
+    
     with open(path_root + '/text', 'w', encoding="utf-8") as f1, \
     open(path_root + '/utt2spk', 'w', encoding="utf-8") as f2, \
     open(path_root + '/wav.scp', 'w', encoding="utf-8") as f3:
-        for instance in files: 
-            filename = instance.strip()
+        for _, instance in enumerate(files):#.iterrows(): 
+            spk_id, filename = instance.split('_')
+            spk_id = str(spk_id)
             file_path = os.path.join(dataset_dir, 'Audios', filename) + '.wav'
+           
+            total_duration += get_duration(file_path) 
+            
             transcription = get_text(dataset_dir, filename)
-
+            filename = spk_id + "_" + filename
             f1.write(filename + ' ' + transcription + '\n')
             f2.write(filename + ' ' + filename + '\n')
-            f3.write(filename + ' sox ' + file_path  + ' ' + wav_format +  '\n')  
+            f3.write(filename + ' sox ' + file_path  + ' ' + wav_format +  '\n') 
+            
+    return total_duration / 3600
 
 def main():
     args = get_args()
@@ -85,20 +83,18 @@ def main():
     train_root = save_data_root + train_dir_name
     dev_root = save_data_root + dev_dir_name
     test_root = save_data_root + test_dir_name
+    
     if os.path.isfile(train_file): 
         train = read_meta(train_file)
-        print('duration of train data:', get_duration(dataset_dir, train))
-        prepare_data(dataset_dir, train_root, train)
+        print('duration of train data:', prepare_data(dataset_dir, train_root, train))
         
     if os.path.isfile(dev_file): 
         dev = read_meta(dev_file)
-        print('duration of dev data:', get_duration(dataset_dir, dev))
-        prepare_data(dataset_dir, dev_root, dev)
+        print('duration of dev data:', prepare_data(dataset_dir, dev_root, dev))
         
     if os.path.isfile(test_file): 
         test = read_meta(test_file)
-        print('duration of test data:', get_duration(dataset_dir, test))
-        prepare_data(dataset_dir, test_root, test)
+        print('duration of test data:', prepare_data(dataset_dir, test_root, test))
 
 if __name__ == "__main__":
     main()

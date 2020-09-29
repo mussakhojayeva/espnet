@@ -10,7 +10,7 @@
 # general configuration
 backend=pytorch
 stage=0      # start from 0 if you need to start from data preparation
-stop_stage=0
+stop_stage=100
 ngpu=1         # number of gpus ("0" uses cpu, otherwise use gpu)
 seed=1
 debugmode=1
@@ -44,7 +44,7 @@ recog_model=model.acc.best # set a model to be used for decoding: 'model.acc.bes
 n_average=10 # use 1 for RNN models
 
 # exp tag
-tag="" # tag for managing experiments.#specaugment_v1_nospeed
+tag="" # tag for managing experiments.
 
 . utils/parse_options.sh || exit 1;
 
@@ -57,7 +57,7 @@ set -o pipefail
 # Train Directories
 train_set=train
 train_dev=dev
-test_set=dev
+test_set=test
 
 # LM Directories
 if [ -z ${lmtag} ]; then
@@ -103,7 +103,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
   
   local/data_prep.py $arg_opts
   
-  for x in ${train_set} ${train_dev}; do
+  for x in ${train_set} ${train_dev} ${test_set}; do
     utils/utt2spk_to_spk2utt.pl data/${x}/utt2spk > data/${x}/spk2utt
     sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" data/${x}/wav.scp
   done
@@ -184,6 +184,9 @@ if ${use_lm} && ${train_lm}; then
   lm_valid_set=data/local/dev.txt
   
   echo "Preparing LM data"
+  
+  mkdir -p data/local/
+  
   text2token.py --nchar 1 \
                 --space "<space>" \
                 --non-lang-syms data/lang_1char/non_lang_syms.txt \
